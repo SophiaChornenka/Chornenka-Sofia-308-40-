@@ -1,0 +1,513 @@
+class UIManager:
+    def __init__(self, cleaner, scanner, log_manager, config, schedule_manager, startup_manager):
+        self.cleaner = cleaner
+        self.scanner = scanner
+        self.log_manager = log_manager
+        self.config = config
+        self.schedule_manager = schedule_manager
+        self.startup_manager = startup_manager
+        self.root = tk.Tk()
+        self.root.title("System Cleaner")
+        self.root.geometry("1000x800")
+        self.root.configure(bg='#1E1E1E')
+        if not winshell:
+            messagebox.showwarning("Dependency Missing", "Recycle bin cleaning requires 'winshell'. Install it with 'pip install winshell'.")
+        self.setup_ui()
+
+    def setup_ui(self):
+        style = ttk.Style()
+        style.theme_use('clam')
+        style.configure('TButton', font=('Segoe UI', 12, 'bold'), padding=12, background='#26A69A', foreground='white')
+        style.map('TButton', background=[('active', '#00897B')])
+        style.configure('TNotebook', background='#1E1E1E', tabmargins=0)
+        style.configure('TNotebook.Tab', background='#2D2D2D', foreground='white', font=('Segoe UI', 13, 'bold'), padding=[20, 10])
+        style.map('TNotebook.Tab', background=[('selected', '#424242')], foreground=[('selected', '#26A69A')])
+        style.configure('TFrame', background='#2D2D2D')
+        style.configure('TLabel', background='#2D2D2D', foreground='white', font=('Segoe UI', 12))
+        style.configure('TEntry', fieldbackground='#424242', foreground='white', font=('Segoe UI', 12))
+        style.configure('Horizontal.TProgressbar', background='#26A69A', troughcolor='#424242')
+        style.configure('Treeview', background='#424242', foreground='white', fieldbackground='#424242', font=('Segoe UI', 10))
+        style.configure('Treeview.Heading', background='#2D2D2D', foreground='white', font=('Segoe UI', 11))
+
+        header_frame = tk.Frame(self.root, bg='#1E1E1E')
+        header_frame.pack(fill=tk.X, padx=15, pady=15)
+        tk.Label(header_frame, text="System Cleaner", font=('Segoe UI', 24, 'bold'), bg='#1E1E1E', fg='#26A69A').pack()
+
+        toolbar_frame = tk.Frame(self.root, bg='#2D2D2D')
+        toolbar_frame.pack(fill=tk.X, padx=15, pady=5)
+        tk.Button(toolbar_frame, text="Quick Scan", command=self.scan_system, bg='#26A69A', fg='white', font=('Segoe UI', 10)).pack(side=tk.LEFT, padx=5)
+        tk.Button(toolbar_frame, text="Quick Clean", command=self.clean_system, bg='#0288D1', fg='white', font=('Segoe UI', 10)).pack(side=tk.LEFT, padx=5)
+        tk.Button(toolbar_frame, text="Export Report", command=self.export_report, bg='#FFB300', fg='black', font=('Segoe UI', 10)).pack(side=tk.LEFT, padx=5)
+
+        main_frame = tk.Frame(self.root, bg='#1E1E1E')
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=15, pady=10)
+
+        notebook = ttk.Notebook(main_frame)
+        notebook.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        # Analysis Tab
+        analysis_frame = ttk.Frame(notebook, style='TFrame')
+        notebook.add(analysis_frame, text="Analysis")
+        tk.Button(analysis_frame, text="Analyze System", command=self.analyze_system, bg='#26A69A', fg='white').pack(pady=10)
+        self.analysis_tree = ttk.Treeview(analysis_frame, columns=("Path", "Size", "Type"), show="headings")
+        self.analysis_tree.heading("Path", text="File Path")
+        self.analysis_tree.heading("Size", text="Size (MB)")
+        self.analysis_tree.heading("Type", text="File Type")
+        self.analysis_tree.pack(fill=tk.BOTH, expand=True, pady=10)
+        self.analysis_summary = tk.Label(analysis_frame, text="", font=('Segoe UI', 11), bg='#2D2D2D', fg='#FFB300')
+        self.analysis_summary.pack(pady=5)
+
+        # Scan & Clean Tab
+        scan_frame = ttk.Frame(notebook, style='TFrame')
+        notebook.add(scan_frame, text="Scan & Clean")
+        self.debug_var = tk.BooleanVar(value=False)
+        tk.Checkbutton(scan_frame, text="Debug Mode (Show All Scanned Files)", variable=self.debug_var, bg='#2D2D2D', fg='white', selectcolor='#424242', font=('Segoe UI', 10)).pack(pady=5)
+        tk.Button(scan_frame, text="Scan System", command=self.scan_system, bg='#26A69A', fg='white').pack(pady=10)
+        self.clean_button = tk.Button(scan_frame, text="Clean System", command=self.clean_system, bg='#0288D1', fg='white', state='disabled')
+        self.clean_button.pack(pady=5)
+        tk.Button(scan_frame, text="Clean Browser Cache", command=self.clean_browser_cache, bg='#0288D1', fg='white', state='disabled').pack(pady=5)
+        tk.Button(scan_frame, text="Empty Recycle Bin", command=self.clean_recycle_bin, bg='#D32F2F', fg='white').pack(pady=5)  # Переміщено сюди
+        tk.Button(scan_frame, text="Add Scan Directory", command=self.add_scan_dir, bg='#FFB300', fg='black').pack(pady=5)
+        self.scan_progress = ttk.Progressbar(scan_frame, mode='determinate', length=300)
+        self.scan_progress.pack(pady=5)
+        self.scan_text = tk.Text(scan_frame, height=15, width=100, bg='#424242', fg='white', font=('Segoe UI', 10))
+        self.scan_text.pack(pady=10)
+        scroll = ttk.Scrollbar(scan_frame, orient=tk.VERTICAL, command=self.scan_text.yview)
+        scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        self.scan_text.config(yscrollcommand=scroll.set)
+
+        # File Search Tab
+        search_frame = ttk.Frame(notebook, style='TFrame')
+        notebook.add(search_frame, text="File Search")
+        tk.Label(search_frame, text="Search File by Name:", font=('Segoe UI', 12), bg='#2D2D2D', fg='white').pack(pady=10)
+        self.search_entry = ttk.Entry(search_frame, width=60, font=('Segoe UI', 12))
+        self.search_entry.pack(pady=5)
+        tk.Button(search_frame, text="Search", command=self.search_files, bg='#26A69A', fg='white').pack(pady=5)
+        self.search_progress = ttk.Progressbar(search_frame, mode='determinate', length=300)
+        self.search_progress.pack(pady=5)
+        self.search_status = tk.Label(search_frame, text="", font=('Segoe UI', 11), bg='#2D2D2D', fg='#FFB300')
+        self.search_status.pack(pady=5)
+        self.search_tree = ttk.Treeview(search_frame, columns=("Path", "Size", "Type"), show="headings")
+        self.search_tree.heading("Path", text="File Path")
+        self.search_tree.heading("Size", text="Size (MB)")
+        self.search_tree.heading("Type", text="File Type")
+        self.search_tree.pack(fill=tk.BOTH, expand=True, pady=5)
+        scroll_search = ttk.Scrollbar(search_frame, orient=tk.VERTICAL, command=self.search_tree.yview)
+        scroll_search.pack(side=tk.RIGHT, fill=tk.Y)
+        self.search_tree.config(yscrollcommand=scroll_search.set)
+        tk.Button(search_frame, text="Delete Selected File", command=self.delete_selected_file, bg='#D32F2F', fg='white').pack(pady=10)
+
+        # Large Files Tab
+        large_files_frame = ttk.Frame(notebook, style='TFrame')
+        notebook.add(large_files_frame, text="Large Files")
+        tk.Button(large_files_frame, text="Scan Large Files", command=self.scan_large_files, bg='#26A69A', fg='white').pack(pady=10)
+        self.large_files_tree = ttk.Treeview(large_files_frame, columns=("Path", "Size", "Type"), show="headings")
+        self.large_files_tree.heading("Path", text="File Path")
+        self.large_files_tree.heading("Size", text="Size (MB)")
+        self.large_files_tree.heading("Type", text="File Type")
+        self.large_files_tree.pack(fill=tk.BOTH, expand=True, pady=10)
+        tk.Button(large_files_frame, text="Delete Selected File", command=self.delete_selected_large_file, bg='#D32F2F', fg='white').pack(pady=5)
+        tk.Button(large_files_frame, text="Move Selected File", command=self.move_selected_large_file, bg='#FFB300', fg='black').pack(pady=5)
+
+        # Startup Tab
+        startup_frame = ttk.Frame(notebook, style='TFrame')
+        notebook.add(startup_frame, text="Startup")
+        tk.Button(startup_frame, text="Load Startup Programs", command=self.load_startup_programs, bg='#26A69A', fg='white').pack(pady=10)
+        self.startup_tree = ttk.Treeview(startup_frame, columns=("Name", "Path", "Status"), show="headings")
+        self.startup_tree.heading("Name", text="Program Name")
+        self.startup_tree.heading("Path", text="Path")
+        self.startup_tree.heading("Status", text="Status")
+        self.startup_tree.pack(fill=tk.BOTH, expand=True, pady=10)
+        tk.Button(startup_frame, text="Disable Selected Program", command=self.disable_startup_program, bg='#D32F2F', fg='white').pack(pady=5)
+
+        # Schedule Tab
+        schedule_frame = ttk.Frame(notebook, style='TFrame')
+        notebook.add(schedule_frame, text="Schedule")
+        tk.Label(schedule_frame, text="Cleaning Period:", font=('Segoe UI', 12), bg='#2D2D2D', fg='white').pack(pady=5)
+        self.schedule_period = ttk.Combobox(schedule_frame, values=["daily", "weekly", "monthly"], font=('Segoe UI', 12))
+        self.schedule_period.set(self.config.settings["schedule"]["period"])
+        self.schedule_period.pack(pady=5)
+        tk.Label(schedule_frame, text="Time (HH:MM):", font=('Segoe UI', 12), bg='#2D2D2D', fg='white').pack(pady=5)
+        self.schedule_time = ttk.Entry(schedule_frame, width=10, font=('Segoe UI', 12))
+        self.schedule_time.insert(0, self.config.settings["schedule"]["time"])
+        self.schedule_time.pack(pady=5)
+        tk.Label(schedule_frame, text="Tasks:", font=('Segoe UI', 12), bg='#2D2D2D', fg='white').pack(pady=5)
+        self.task_temp = tk.BooleanVar(value="temp_files" in self.config.settings["schedule"]["tasks"])
+        tk.Checkbutton(schedule_frame, text="Temporary Files", variable=self.task_temp, bg='#2D2D2D', fg='white', selectcolor='#424242', font=('Segoe UI', 10)).pack()
+        self.task_browser = tk.BooleanVar(value="browser_cache" in self.config.settings["schedule"]["tasks"])
+        tk.Checkbutton(schedule_frame, text="Browser Cache", variable=self.task_browser, bg='#2D2D2D', fg='white', selectcolor='#424242', font=('Segoe UI', 10)).pack()
+        self.task_bin = tk.BooleanVar(value="recycle_bin" in self.config.settings["schedule"]["tasks"])
+        tk.Checkbutton(schedule_frame, text="Recycle Bin", variable=self.task_bin, bg='#2D2D2D', fg='white', selectcolor='#424242', font=('Segoe UI', 10)).pack()
+        tk.Button(schedule_frame, text="Schedule Cleaning", command=self.schedule_cleaning, bg='#26A69A', fg='white').pack(pady=10)
+
+        # Logs Tab
+        logs_frame = ttk.Frame(notebook, style='TFrame')
+        notebook.add(logs_frame, text="Logs")
+        tk.Button(logs_frame, text="View Logs", command=self.view_logs, bg='#0288D1', fg='white').pack(pady=5)
+        tk.Button(logs_frame, text="Clear Old Logs", command=self.clear_old_logs, bg='#D32F2F', fg='white').pack(pady=5)
+        self.logs_text = tk.Text(logs_frame, height=20, width=100, bg='#424242', fg='white', font=('Segoe UI', 10))
+        self.logs_text.pack(pady=10)
+        scroll_logs = ttk.Scrollbar(logs_frame, orient=tk.VERTICAL, command=self.logs_text.yview)
+        scroll_logs.pack(side=tk.RIGHT, fill=tk.Y)
+        self.logs_text.config(yscrollcommand=scroll_logs.set)
+
+        # Performance Tab
+        performance_frame = ttk.Frame(notebook, style='TFrame')
+        notebook.add(performance_frame, text="Performance")
+        tk.Button(performance_frame, text="Start Monitoring", command=self.start_performance_monitoring, bg='#26A69A', fg='white').pack(pady=5)
+        tk.Button(performance_frame, text="Stop Monitoring", command=self.stop_performance_monitoring, bg='#D32F2F', fg='white').pack(pady=5)
+        self.performance_text = tk.Text(performance_frame, height=15, width=100, bg='#424242', fg='white', font=('Segoe UI', 10))
+        self.performance_text.pack(pady=10)
+        self.performance_monitoring = False
+
+        self.status_bar = tk.Label(self.root, text="Ready", bd=1, relief=tk.SUNKEN, anchor=tk.W, bg='#2D2D2D', fg='white', font=('Segoe UI', 10))
+        self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
+
+        self.search_tree.bind('<Enter>', self.show_tooltip)
+        self.search_tree.bind('<Leave>', self.hide_tooltip)
+        self.large_files_tree.bind('<Enter>', self.show_tooltip)
+        self.large_files_tree.bind('<Leave>', self.hide_tooltip)
+        self.analysis_tree.bind('<Enter>', self.show_tooltip)
+        self.analysis_tree.bind('<Leave>', self.hide_tooltip)
+        self.tooltip = None
+        self.report_data = {}
+        self.is_scanned = False
+
+    def show_tooltip(self, event):
+        tree = event.widget
+        try:
+            region = tree.identify_region(event.x, event.y)
+            if region != "cell":
+                return
+            item = tree.identify_row(event.y)
+            if item:
+                file_path = tree.item(item, "values")[0]
+                if not self.tooltip:
+                    self.tooltip = tk.Toplevel(self.root)
+                    self.tooltip.wm_overrideredirect(True)
+                    self.tooltip.geometry(f"+{event.x_root + 10}+{event.y_root + 10}")
+                    tk.Label(self.tooltip, text=file_path, bg='#424242', fg='white', font=('Segoe UI', 9), borderwidth=1, relief='solid').pack()
+        except tk.TclError:
+            pass
+
+    def hide_tooltip(self, event):
+        if self.tooltip:
+            self.tooltip.destroy()
+            self.tooltip = None
+
+    def analyze_system(self):
+        self.status_bar.config(text="Analyzing system...")
+        self.root.update()
+        files = self.scanner.scan("temp_files")
+        browser_files = self.scanner.scan("browser_cache")
+        large_files = self.scanner.scan("large_files")
+        self.analysis_tree.delete(*self.analysis_tree.get_children())
+        for file in files + browser_files:
+            size_mb = os.path.getsize(file) / (1024 * 1024)
+            ext = os.path.splitext(file)[1].lower()
+            self.analysis_tree.insert("", tk.END, values=(file, f"{size_mb:.2f}", ext))
+        for file_path, size, ext in large_files:
+            size_mb = size / (1024 * 1024)
+            self.analysis_tree.insert("", tk.END, values=(file_path, f"{size_mb:.2f}", ext))
+        dir_summary = "\n".join(f"{d}: {s / (1024 * 1024):.2f} MB" for d, s in sorted(self.scanner.disk_usage["dirs"].items(), key=lambda x: x[1], reverse=True)[:5])
+        summary = f"Total size: {self.scanner.disk_usage['total_size'] / (1024 * 1024):.2f} MB\nTypes: {len(self.scanner.disk_usage['file_types'])}\nTop directories:\n{dir_summary}"
+        self.analysis_summary.config(text=summary)
+        self.log_manager.log_action(f"Analysis done: {summary.replace('\n', '; ')}")
+        self.status_bar.config(text="Analysis complete")
+
+    def scan_system(self):
+        self.status_bar.config(text="Scanning temporary files...")
+        self.scan_progress['value'] = 0
+        self.scan_progress['maximum'] = 100
+        self.root.update()
+        files = self.scanner.scan("temp_files")
+        self.scan_progress['value'] = 100
+        self.scan_text.delete(1.0, tk.END)
+        display_files = files if self.debug_var.get() else files[:50]
+        self.scan_text.insert(tk.END, f"Found {len(files)} temporary files:\n" + "\n".join(display_files) + (("\n..." if len(files) > 50 else "") if not self.debug_var.get() else ""))
+        self.log_manager.log_action(f"Scanned: {len(files)} temp files")
+        self.status_bar.config(text=f"Scan complete: {len(files)} files found")
+        self.is_scanned = True
+        self.clean_button.config(state='normal')
+
+    def clean_system(self):
+        if not self.is_scanned:
+            messagebox.showerror("Error", "Помилка очищення. Спочатку виконайте сканування.")
+            self.status_bar.config(text="Clean failed: Scan required")
+            return
+        self.status_bar.config(text="Cleaning system...")
+        self.scan_progress['value'] = 0
+        self.scan_progress['maximum'] = 100
+        self.root.update()
+        files = self.scanner.scan("temp_files")
+        self.scan_progress['value'] = 50
+        count, types = self.cleaner.clean_files(files, action="temp_files")
+        self.scan_progress['value'] = 100
+        report = f"Deleted {count} temporary files\nTypes: {', '.join(f'{k}: {v}' for k, v in types.items())}"
+        self.report_data["temp_files"] = (count, types)
+        messagebox.showinfo("Cleaning Complete", report)
+        self.log_manager.log_action(f"Cleaned: {count} temp files")
+        self.status_bar.config(text=f"Cleaned {count} temporary files")
+
+    def clean_browser_cache(self):
+        if not self.is_scanned:
+            messagebox.showerror("Error", "Помилка очищення. Спочатку виконайте сканування.")
+            self.status_bar.config(text="Clean failed: Scan required")
+            return
+        self.status_bar.config(text="Cleaning browser cache...")
+        self.scan_progress['value'] = 0
+        self.scan_progress['maximum'] = 100
+        self.root.update()
+        files = self.scanner.scan("browser_cache")
+        self.scan_progress['value'] = 50
+        count, types = self.cleaner.clean_files(files, action="browser_cache")
+        self.scan_progress['value'] = 100
+        report = f"Deleted {count} browser cache files\nTypes: {', '.join(f'{k}: {v}' for k, v in types.items())}"
+        self.report_data["browser_cache"] = (count, types)
+        messagebox.showinfo("Browser Cache Cleaning Complete", report)
+        self.log_manager.log_action(f"Cleaned: {count} cache files")
+        self.status_bar.config(text=f"Cleaned {count} browser cache files")
+
+    def clean_recycle_bin(self):
+        self.status_bar.config(text="Cleaning recycle bin...")
+        self.scan_progress['value'] = 0
+        self.scan_progress['maximum'] = 100
+        self.root.update()
+        count, types = self.cleaner.clean_recycle_bin()
+        self.scan_progress['value'] = 100
+        report = f"Deleted {count} files from recycle bin\nTypes: {', '.join(f'{k}: {v}' for k, v in types.items())}"
+        self.report_data["recycle_bin"] = (count, types)
+        messagebox.showinfo("Recycle Bin Cleaning Complete", report)
+        self.log_manager.log_action(f"Cleaned: {count} bin files")
+        self.status_bar.config(text=f"Cleaned {count} recycle bin files")
+
+    def search_files(self):
+        search_term = self.search_entry.get().strip()
+        if not search_term:
+            messagebox.showwarning("Input Error", "Please enter a search term")
+            self.status_bar.config(text="Search failed: No term entered")
+            return
+        self.search_status.config(text="Searching...")
+        self.search_progress['value'] = 0
+        self.search_progress['maximum'] = 100
+        self.root.update()
+        results = []
+        for directory in self.config.settings["scan_dirs"]:
+            try:
+                for root, _, files in os.walk(directory):
+                    for file in files:
+                        if search_term.lower() in file.lower():
+                            file_path = os.path.join(root, file)
+                            results.append(file_path)
+            except Exception as e:
+                self.log_manager.log_action(f"Search error in {directory}: {str(e)}")
+        self.search_tree.delete(*self.search_tree.get_children())
+        for i, file in enumerate(results):
+            size_mb = os.path.getsize(file) / (1024 * 1024)
+            ext = os.path.splitext(file)[1].lower()
+            self.search_tree.insert("", tk.END, values=(file, f"{size_mb:.2f}", ext))
+            self.search_progress['value'] = min((i + 1) / len(results) * 100, 100) if results else 100
+            self.root.update()
+        self.log_manager.log_action(f"Searched '{search_term}': {len(results)} files")
+        self.search_status.config(text=f"Found {len(results)} files")
+        self.status_bar.config(text=f"Search complete: {len(results)} files found")
+
+    def delete_selected_file(self):
+        selected = self.search_tree.selection()
+        if not selected:
+            messagebox.showwarning("Selection Error", "Please select a file to delete")
+            self.status_bar.config(text="Delete failed: No file selected")
+            return
+        file_path = self.search_tree.item(selected[0], "values")[0]
+        success, message = self.cleaner.delete_specific_file(file_path)
+        if success:
+            messagebox.showinfo("Success", message)
+            self.search_tree.delete(selected[0])
+            self.status_bar.config(text=message)
+        else:
+            messagebox.showerror("Error", message)
+            self.status_bar.config(text=f"Delete failed: {message}")
+
+    def scan_large_files(self):
+        self.status_bar.config(text="Scanning large files...")
+        self.scan_progress['value'] = 0
+        self.scan_progress['maximum'] = 100
+        self.root.update()
+        files = self.scanner.scan("large_files")
+        self.scan_progress['value'] = 100
+        self.large_files_tree.delete(*self.large_files_tree.get_children())
+        for file_path, size, ext in files:
+            size_mb = size / (1024 * 1024)
+            self.large_files_tree.insert("", tk.END, values=(file_path, f"{size_mb:.2f}", ext))
+        self.log_manager.log_action(f"Scanned large files: {len(files)}")
+        self.status_bar.config(text=f"Scan complete: {len(files)} large files found")
+
+    def delete_selected_large_file(self):
+        selected = self.large_files_tree.selection()
+        if not selected:
+            messagebox.showwarning("Selection Error", "Please select a file to delete")
+            self.status_bar.config(text="Delete failed: No file selected")
+            return
+        file_path = self.large_files_tree.item(selected[0], "values")[0]
+        success, message = self.cleaner.delete_specific_file(file_path, large_file=True)  # Додано параметр large_file
+        if success:
+            messagebox.showinfo("Success", message)
+            self.large_files_tree.delete(selected[0])
+            self.status_bar.config(text=message)
+        else:
+            messagebox.showerror("Error", message)
+            self.status_bar.config(text=f"Delete failed: {message}")
+
+    def move_selected_large_file(self):
+        selected = self.large_files_tree.selection()
+        if not selected:
+            messagebox.showwarning("Selection Error", "Please select a file to move")
+            self.status_bar.config(text="Move failed: No file selected")
+            return
+        file_path = self.large_files_tree.item(selected[0], "values")[0]
+        dest_dir = filedialog.askdirectory(title="Select Destination Directory")
+        if not dest_dir:
+            self.status_bar.config(text="Move cancelled")
+            return
+        try:
+            shutil.move(file_path, os.path.join(dest_dir, os.path.basename(file_path)))
+            self.large_files_tree.delete(selected[0])
+            self.log_manager.log_action(f"Moved: {os.path.basename(file_path)} to {dest_dir}")
+            self.status_bar.config(text=f"Moved file to {dest_dir}")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to move file: {str(e)}")
+            self.status_bar.config(text=f"Move failed: {str(e)}")
+
+    def load_startup_programs(self):
+        self.status_bar.config(text="Loading startup programs...")
+        self.scan_progress['value'] = 0
+        self.scan_progress['maximum'] = 100
+        self.root.update()
+        programs = self.startup_manager.get_startup_programs()
+        self.scan_progress['value'] = 100
+        self.startup_tree.delete(*self.startup_tree.get_children())
+        for name, path, status in programs:
+            self.startup_tree.insert("", tk.END, values=(name, path, status))
+        self.log_manager.log_action(f"Loaded: {len(programs)} startup programs")
+        self.status_bar.config(text=f"Loaded {len(programs)} startup programs")
+
+    def disable_startup_program(self):
+        selected = self.startup_tree.selection()
+        if not selected:
+            messagebox.showwarning("Selection Error", "Please select a program to disable")
+            self.status_bar.config(text="Disable failed: No program selected")
+            return
+        name = self.startup_tree.item(selected[0], "values")[0]
+        for i in range(len(self.startup_manager.registry_paths)):
+            if self.startup_manager.disable_startup_program(name, i):
+                self.startup_tree.delete(selected[0])
+                self.log_manager.log_action(f"Disabled: {name}")
+                self.status_bar.config(text=f"Disabled startup program: {name}")
+                return
+        messagebox.showerror("Error", f"Failed to disable {name}")
+        self.status_bar.config(text=f"Disable failed for {name}")
+
+    def schedule_cleaning(self):
+        period = self.schedule_period.get()
+        time_str = self.schedule_time.get().strip()
+        if not re.match(r"^\d{2}:\d{2}$", time_str):
+            messagebox.showwarning("Input Error", "Неправильний формат часу. Використовуйте HH:MM (наприклад, 14:00)")
+            self.status_bar.config(text="Scheduling failed: Invalid time format")
+            return
+        tasks = []
+        if self.task_temp.get():
+            tasks.append("temp_files")
+        if self.task_browser.get():
+            tasks.append("browser_cache")
+        if self.task_bin.get():
+            tasks.append("recycle_bin")
+        if not tasks:
+            messagebox.showwarning("Input Error", "Please select at least one task")
+            self.status_bar.config(text="Scheduling failed: No tasks selected")
+            return
+        if self.schedule_manager.schedule_cleaning(period, time_str, tasks):
+            messagebox.showinfo("Success", f"Scheduled {period} cleaning at {time_str} for {', '.join(tasks)}")
+            threading.Thread(target=self.schedule_manager.run, daemon=True).start()
+            self.status_bar.config(text=f"Scheduled cleaning at {time_str}")
+        else:
+            messagebox.showerror("Error", "Invalid schedule")
+            self.status_bar.config(text="Scheduling failed")
+
+    def export_report(self):
+        if not self.report_data:
+            messagebox.showwarning("No Data", "No cleaning actions performed yet")
+            self.status_bar.config(text="Export failed: No report data")
+            return
+        filename = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV Files", "*.csv")])
+        if filename:
+            result = self.log_manager.export_report(self.report_data, filename)
+            if result:
+                messagebox.showinfo("Success", f"Report exported to {filename}")
+                self.status_bar.config(text=f"Report exported to {filename}")
+            else:
+                messagebox.showerror("Error", "Failed to export report")
+                self.status_bar.config(text="Export failed")
+
+    def view_logs(self):
+        logs = self.log_manager.get_logs()
+        self.logs_text.delete(1.0, tk.END)
+        self.logs_text.insert(tk.END, logs)
+        self.status_bar.config(text="Logs displayed")
+
+    def clear_old_logs(self):
+        if self.log_manager.clear_old_logs():
+            messagebox.showinfo("Success", "Old logs cleared")
+            self.view_logs()
+            self.status_bar.config(text="Old logs cleared")
+        else:
+            messagebox.showerror("Error", "Failed to clear old logs")
+            self.status_bar.config(text="Clear logs failed")
+
+    def add_scan_dir(self):
+        directory = filedialog.askdirectory()
+        if directory:
+            self.config.add_scan_dir(directory)
+            messagebox.showinfo("Success", f"Added scan directory: {directory}")
+            self.log_manager.log_action(f"Added dir: {directory}")
+            self.status_bar.config(text=f"Added scan directory: {directory}")
+
+    def start_performance_monitoring(self):
+        self.performance_monitoring = True
+        self.status_bar.config(text="Monitoring performance...")
+        try:
+            cpu_usage = psutil.cpu_percent(interval=1)
+            threading.Thread(target=self.update_performance, daemon=True).start()
+        except Exception as e:
+            self.performance_monitoring = False
+            messagebox.showerror("Error", "Monitoring failed: Access denied")
+            self.status_bar.config(text="Monitoring failed: Access denied")
+            self.performance_text.delete(1.0, tk.END)
+            self.performance_text.insert(tk.END, "Monitoring failed. Run as administrator or install psutil.")
+
+    def stop_performance_monitoring(self):
+        self.performance_monitoring = False
+        self.status_bar.config(text="Monitoring stopped")
+
+    def update_performance(self):
+        while self.performance_monitoring:
+            try:
+                cpu_usage = psutil.cpu_percent(interval=1)
+                ram = psutil.virtual_memory()
+                disk = psutil.disk_usage("C:\\")
+                performance_info = (
+                    f"CPU Usage: {cpu_usage}%\n"
+                    f"RAM Used: {ram.used / (1024 ** 3):.2f} GB / {ram.total / (1024 ** 3):.2f} GB ({ram.percent}%)\n"
+                    f"Disk Used: {disk.used / (1024 ** 3):.2f} GB / {disk.total / (1024 ** 3):.2f} GB ({disk.percent}%)\n"
+                    f"{'-' * 50}\n"
+                )
+                self.performance_text.delete(1.0, tk.END)
+                self.performance_text.insert(tk.END, performance_info)
+                self.root.update()
+            except Exception as e:
+                self.performance_monitoring = False
+                messagebox.showerror("Error", "Monitoring failed: Access denied")
+                self.status_bar.config(text="Monitoring failed: Access denied")
+                self.performance_text.delete(1.0, tk.END)
+                self.performance_text.insert(tk.END, "Monitoring failed. Run as administrator or install psutil.")
+                break
+            time.sleep(2)
