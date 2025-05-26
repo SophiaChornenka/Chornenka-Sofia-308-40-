@@ -1,0 +1,34 @@
+class ScheduleManager:
+    def __init__(self, cleaner, config):
+        self.cleaner = cleaner
+        self.config = config
+        self.scheduler = schedule.Scheduler()
+
+    def schedule_cleaning(self, period="daily", time_str="00:00", tasks=["temp_files"]):
+        try:
+            if period == "daily":
+                job = schedule.every().day.at(time_str)
+            elif period == "weekly":
+                job = schedule.every().week.at(time_str)
+            elif period == "monthly":
+                job = schedule.every(30).days.at(time_str)
+            else:
+                raise ValueError("Invalid period")
+            if "temp_files" in tasks:
+                job.do(self.cleaner.clean_files, self.cleaner.scanner.scan("temp_files"), confirm=False, action="temp_files")
+            if "browser_cache" in tasks:
+                job.do(self.cleaner.clean_files, self.cleaner.scanner.scan("browser_cache"), confirm=False, action="browser_cache")
+            if "recycle_bin" in tasks:
+                job.do(self.cleaner.clean_recycle_bin, confirm=False)
+            self.cleaner.log_manager.log_action(f"Scheduled {period} cleaning at {time_str} ({tasks})")
+            self.config.settings["schedule"] = {"period": period, "time": time_str, "tasks": tasks}
+            self.config.save_config()
+            return True
+        except (schedule.ScheduleValueError, ValueError) as e:
+            self.cleaner.log_manager.log_action(f"Schedule error: {str(e)}")
+            return False
+
+    def run(self):
+        while True:
+            self.scheduler.run_pending()
+            time.sleep(60)
