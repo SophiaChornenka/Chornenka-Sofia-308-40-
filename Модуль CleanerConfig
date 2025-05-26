@@ -1,0 +1,53 @@
+class CleanerConfig:
+    def __init__(self, config_file="cleaner_config.json"):
+        self.config_file = config_file
+        self.settings = {
+            "scan_dirs": [
+                str(Path.home() / "AppData" / "Local" / "Temp"),
+                str(Path.home() / "Downloads"),
+                str(Path("C:") / "Windows" / "Temp"),
+                str(Path("C:") / "Windows" / "Prefetch"),
+                str(Path.home() / "AppData" / "Local" / "Microsoft" / "Windows" / "Temporary Internet Files")
+            ],
+            "file_extensions": [".tmp", ".log", ".cache", ".bak", ".temp", ".dmp", ".txt", ".old", ".chk", ".dat"],
+            "ignore_dirs": [
+                str(Path("C:") / "Windows" / "System32"),
+                str(Path("C:") / "Windows" / "SysWOW64")
+            ],
+            "browser_cache_dirs": {
+                "Chrome": str(Path.home() / "AppData" / "Local" / "Google" / "Chrome" / "User Data" / "Default" / "Cache"),
+                "Firefox": str(Path.home() / "AppData" / "Roaming" / "Mozilla" / "Firefox" / "Profiles"),
+                "Edge": str(Path.home() / "AppData" / "Local" / "Microsoft" / "Edge" / "User Data" / "Default" / "Cache"),
+                "Opera": str(Path.home() / "AppData" / "Roaming" / "Opera Software" / "Opera Stable" / "Cache")
+            },
+            "browser_exclusions": {"cookies": [], "sessions": []},
+            "large_file_threshold": 100 * 1024 * 1024,  # 100 MB
+            "large_file_age_days": 30,
+            "schedule": {
+                "period": "daily",
+                "time": "00:00",
+                "tasks": ["temp_files", "browser_cache", "recycle_bin"]
+            }
+        }
+        self.load_config()
+
+    def load_config(self):
+        try:
+            with open(self.config_file, 'r') as f:
+                self.settings.update(json.load(f))
+        except FileNotFoundError:
+            self.save_config()
+
+    def save_config(self):
+        with open(self.config_file, 'w') as f:
+            json.dump(self.settings, f, indent=4)
+
+    def add_scan_dir(self, directory):
+        if directory and directory not in self.settings["scan_dirs"]:
+            self.settings["scan_dirs"].append(directory)
+            self.save_config()
+
+    def add_ignore_dir(self, directory):
+        if directory and directory not in self.settings["ignore_dirs"]:
+            self.settings["ignore_dirs"].append(directory)
+            self.save_config()
