@@ -1,0 +1,60 @@
+class LogManager:
+    def __init__(self, log_file="cleaner_log.txt"):
+        self.log_file = log_file
+        logging.basicConfig(filename=log_file, level=logging.INFO,
+                           format="%(asctime)s - %(message)s")
+
+    def log_action(self, message):
+        logging.info(message)
+
+    def get_logs(self):
+        try:
+            with open(self.log_file, 'r') as f:
+                lines = f.readlines()
+            thirty_days_ago = datetime.datetime.now() - datetime.timedelta(days=30)
+            filtered_lines = []
+            for line in lines:
+                timestamp_str = line.split(" - ")[0]
+                try:
+                    log_time = datetime.datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S,%f')
+                    if log_time >= thirty_days_ago:
+                        filtered_lines.append(line)
+                except (ValueError, IndexError):
+                    continue
+            with open(self.log_file, 'w') as f:
+                f.writelines(filtered_lines)
+            return "".join(filtered_lines)
+        except FileNotFoundError:
+            return "No logs available."
+
+    def clear_old_logs(self):
+        try:
+            with open(self.log_file, 'r') as f:
+                lines = f.readlines()
+            thirty_days_ago = datetime.datetime.now() - datetime.timedelta(days=30)
+            filtered_lines = []
+            for line in lines:
+                timestamp_str = line.split(" - ")[0]
+                try:
+                    log_time = datetime.datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S,%f')
+                    if log_time >= thirty_days_ago:
+                        filtered_lines.append(line)
+                except (ValueError, IndexError):
+                    continue
+            with open(self.log_file, 'w') as f:
+                f.writelines(filtered_lines)
+            return True
+        except Exception as e:
+            logging.info(f"Error clearing logs: {str(e)}")
+            return False
+
+    def export_report(self, report_data, filename="cleaning_report.csv"):
+        try:
+            with open(filename, 'w', newline='') as f:
+                f.write("Action,Count,Types\n")
+                for action, (count, types) in report_data.items():
+                    f.write(f"{action},{count},\"{'; '.join(f'{k}: {v}' for k, v in types.items())}\"\n")
+            return filename
+        except Exception as e:
+            logging.info(f"Export error: {str(e)}")
+            return None

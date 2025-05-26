@@ -1,0 +1,29 @@
+class StartupManager:
+    def __init__(self):
+        self.registry_paths = [
+            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run"),
+            (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run")
+        ]
+
+    def get_startup_programs(self):
+        programs = []
+        for hive, path in self.registry_paths:
+            try:
+                with winreg.OpenKey(hive, path, 0, winreg.KEY_READ) as key:
+                    for i in range(winreg.QueryInfoKey(key)[1]):
+                        name, value, _ = winreg.EnumValue(key, i)
+                        programs.append((name, value, "Enabled"))
+            except Exception as e:
+                logging.info(f"Startup read error: {path} ({str(e)})")
+        return programs
+
+    def disable_startup_program(self, name, hive_index=0):
+        hive, path = self.registry_paths[hive_index]
+        try:
+            with winreg.OpenKey(hive, path, 0, winreg.KEY_WRITE) as key:
+                winreg.DeleteValue(key, name)
+            logging.info(f"Disabled: {name}")
+            return True
+        except Exception as e:
+            logging.info(f"Disable error for {name}: {str(e)}")
+            return False

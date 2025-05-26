@@ -1,0 +1,84 @@
+class FileScanner:
+    def __init__(self, config):
+        self.config = config
+        self.found_files = []
+        self.large_files = []
+        self.disk_usage = {}
+
+    def scan(self, scan_type="temp_files"):
+        self.found_files = []
+        self.large_files = []
+        self.disk_usage = {"total_size": 0, "file_types": {}, "dirs": {}}
+        total_size = 0
+        file_types = {}
+        dir_sizes = {}
+        for directory in self.config.settings["scan_dirs"]:
+            if directory in self.config.settings["ignore_dirs"]:
+                continue
+            if not os.path.exists(directory):
+                logging.info(f"Dir not found: {directory}")
+                continue
+            logging.info(f"Scanning: {directory}")
+            try:
+                for root, _, files in os.walk(directory, onerror=lambda e: logging.info(f"Scan error in {root}: {str(e)}")):
+                    if any(root.startswith(ignore) for ignore in self.config.settings["ignore_dirs"]):
+                        continue
+                    for file in files:
+                        file_path = os.path.join(root, file)
+                        if not os.access(file_path, os.R_OK):
+                            logging.info(f"Access denied: {file_path}")
+                            continue
+                        file_size = os.path.getsize(file_path)
+                        total_size += file_size
+                        ext = os.path.splitext(file)[1].lower()
+                        file_types[ext] = file_types.get(ext, 0) + file_size
+                        dir_sizes[root] = dir_sizes.get(root, 0) + file_size
+                        logging.info(f"Found: {file} ({file_size / 1024:.2f} KB)")
+                        if scan_type == "temp_files" and any(file.endswith(ext) for ext in self.config.settings["file_extensions"]):
+                            self.found_files.append(file_path)
+                        elif scan_type == "large_files" and file_size > self.config.settings["large_file_threshold"]:
+                            file_age = (time.time() - os.path.getmtime(file_path)) / (24 * 3600)
+                            if file_age > self.config.settings["large_file_age_days"]:
+                                self.large_files.append((file_path, file_size, ext))
+            except Exception as e:
+                logging.info(f"Error in {directory}: {str(e)}")
+        if scan_type == "browser_cache":
+            for browser, cache_dir in self.config.settings["browser_cache_dirs"].items():
+                if not os.path.exists(cache_dir):
+                    logging.info(f"Browser cache not found: {cache_dir}")
+                    continue
+                logging.info(f"Scanning cache: {cache_dir}")
+                try:
+                    for root, _, files in os.walk(cache_dir):
+                        for file in files:
+                            file_path = os.path.join(root, file)
+                            if not os.access(file_path, os.R_OK):
+                                logging.info(f"Access denied: {file_path}")
+                                continue
+                            if not any(file.endswith(ex) for ex in self.config.settings["browser_exclusions"]["cookies"] + self.config.settings["browser_exclusions"]["sessions"]):
+                                self.found_files.append(file_path)
+                                file_size = os.path.getsize(file_path)
+                                total_size += file_size
+                                ext = os.path.splitext(file)[1].lower()
+                                file_types[ext] = file_types.get(ext, 0) + file_size
+                                dir_sizes[root] = dir_sizes.get(root, 0) + file_size
+                                logging.info(f"Found cache: {file} ({file_size / 1024:.2f} KB)")
+                except Exception as e:
+                    logging.info(f"Error in cache {cache_dir}: {str(e)}")
+        if scan_type == "recycle_bin" and winshell:
+            try:
+                recycle_bin = winshell.recycle_bin()
+                for item in recycle_bin:
+                    file_path = item.original_filename()
+                    if os.path.exists(file_path):
+                        file_size = os.path.getsize(file_path)
+                        self.found_files.append(file_path)
+                        total_size += file_size
+                        ext = os.path.splitext(file_path)[1].lower()
+                        file_types[ext] = file_types.get(ext, 0) + file_size
+                        dir_sizes["Recycle Bin"] = dir_sizes.get("Recycle Bin", 0) + file_size
+                        logging.info(f"Found in bin: {file_path} ({file_size / 1024:.2f} KB)")
+            except Exception as e:
+                logging.info(f"Error in recycle bin: {str(e)}")
+        self.disk_usage = {"total_size": total_size, "file_types": file_types, "dirs": dir_sizes}
+        return self.found_files if scan_type != "large_files" else self.large_files

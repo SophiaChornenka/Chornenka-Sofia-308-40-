@@ -1,0 +1,13 @@
+class SafetyManager:
+    def __init__(self):
+        self.critical_paths = [
+            str(Path("C:") / "Windows" / "System32"),
+            str(Path("C:") / "Windows" / "SysWOW64")
+        ]
+
+    def is_safe_to_delete(self, file_path):
+        try:
+            return not any(file_path.startswith(critical) for critical in self.critical_paths)
+        except Exception as e:
+            logging.info(f"Safety check failed for {file_path}: {str(e)}")
+            return False
