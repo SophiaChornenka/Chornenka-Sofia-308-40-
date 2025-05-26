@@ -1,0 +1,13 @@
+class SystemCleaner:
+    def __init__(self):
+        self.config = CleanerConfig()
+        self.scanner = FileScanner(self.config)
+        self.safety_manager = SafetyManager()
+        self.log_manager = LogManager()
+        self.startup_manager = StartupManager()
+        self.cleaner = Cleaner(self.scanner, self.safety_manager, self.log_manager)
+        self.schedule_manager = ScheduleManager(self.cleaner, self.config)
+        self.ui_manager = UIManager(self.cleaner, self.scanner, self.log_manager, self.config, self.schedule_manager, self.startup_manager)
+
+    def run(self):
+        self.ui_manager.root.mainloop()
