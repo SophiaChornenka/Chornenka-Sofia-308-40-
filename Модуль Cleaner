@@ -1,0 +1,83 @@
+class Cleaner:
+    def __init__(self, scanner, safety_manager, log_manager):
+        self.scanner = scanner
+        self.safety_manager = safety_manager
+        self.log_manager = log_manager
+
+    def clean_files(self, files, confirm=True, action="temp_files"):
+        if not files:
+            self.log_manager.log_action(f"No {action} files found")
+            return 0, {}
+        safe_files = [f for f in files if self.safety_manager.is_safe_to_delete(f)]
+        if not safe_files:
+            self.log_manager.log_action(f"No safe {action} files")
+            return 0, {}
+        if confirm and not messagebox.askyesno("Confirm Cleaning", f"Delete {len(safe_files)} {action} files?\n\nSample:\n" + "\n".join(safe_files[:3])):
+            self.log_manager.log_action(f"{action} clean cancelled")
+            return 0, {}
+        deleted_count = 0
+        deleted_types = {}
+        for file in safe_files:
+            try:
+                send2trash.send2trash(os.path.normpath(file))
+                self.log_manager.log_action(f"Deleted: {os.path.basename(file)}")
+                deleted_count += 1
+                ext = os.path.splitext(file)[1].lower()
+                deleted_types[ext] = deleted_types.get(ext, 0) + 1
+            except Exception as e:
+                self.log_manager.log_action(f"Error deleting {file}: {str(e)}")
+        return deleted_count, deleted_types
+
+    def delete_specific_file(self, file_path, large_file=False):
+        file_path = os.path.normpath(file_path)
+        if not os.path.exists(file_path):
+            self.log_manager.log_action(f"Not found: {file_path}")
+            return False, "File does not exist"
+        if not os.access(file_path, os.W_OK):
+            self.log_manager.log_action(f"No permission: {file_path}")
+            return False, "No permission to delete"
+        if not self.safety_manager.is_safe_to_delete(file_path):
+            self.log_manager.log_action(f"Critical file: {file_path}")
+            return False, "File in critical path"
+        file_size = os.path.getsize(file_path)
+        size_mb = file_size / (1024 * 1024)
+        if not messagebox.askyesno("Confirm Deletion", f"Delete {file_path} ({size_mb:.2f} MB)?"):
+            self.log_manager.log_action(f"Delete cancelled: {file_path}")
+            return False, "Deletion cancelled"
+        try:
+            if large_file and file_size > 4 * 1024 * 1024 * 1024:  # Перевірка розміру > 4 ГБ
+                if not messagebox.askyesno("Warning", "File too large to move to Recycle Bin. Delete permanently?"):
+                    return False, "Deletion cancelled"
+                os.remove(file_path)
+            else:
+                send2trash.send2trash(file_path)
+            self.log_manager.log_action(f"Deleted: {os.path.basename(file_path)}")
+            return True, "File deleted"
+        except Exception as e:
+            self.log_manager.log_action(f"Delete error: {file_path} ({str(e)})")
+            return False, f"Error: {str(e)}"
+
+    def clean_recycle_bin(self, confirm=True):
+        if not winshell:
+            self.log_manager.log_action("Recycle bin cleaning unavailable (winshell missing)")
+            messagebox.showwarning("Dependency Missing", "Recycle bin cleaning requires 'winshell'. Install it with 'pip install winshell'.")
+            return 0, {}
+        if confirm and not messagebox.askyesno("Confirm Recycle Bin Cleaning", "Empty the recycle bin?"):
+            self.log_manager.log_action("Recycle bin clean cancelled")
+            return 0, {}
+        deleted_count = 0
+        deleted_types = {}
+        try:
+            recycle_bin = winshell.recycle_bin()
+            for item in recycle_bin:
+                file_path = item.original_filename()
+                ext = os.path.splitext(file_path)[1].lower()
+                recycle_bin.delete(item)
+                deleted_count += 1
+                deleted_types[ext] = deleted_types.get(ext, 0) + 1
+                self.log_manager.log_action(f"Deleted from bin: {os.path.basename(file_path)}")
+            recycle_bin.empty(confirm=False)
+            self.log_manager.log_action("Recycle bin emptied")
+        except Exception as e:
+            self.log_manager.log_action(f"Recycle bin error: {str(e)}")
+        return deleted_count, deleted_types
